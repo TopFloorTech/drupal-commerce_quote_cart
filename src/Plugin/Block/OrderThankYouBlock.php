@@ -29,26 +29,26 @@ class OrderThankYouBlock extends OrderBlockBase {
       '#type' => 'textfield',
       '#title' => $this->t('Order title'),
       '#description' => $this->t('The title to use for a full order.'),
-      '#default_value' => isset($config['order_title']) ? $config['order_title'] : 'Thank You For Your Order!',
+      '#default_value' => $config['order_title'] ?? 'Thank You For Your Order!',
     ];
 
     $form['quote_title'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Quote title'),
       '#description' => $this->t('The title to use for a quote-only order.'),
-      '#default_value' => isset($config['quote_title']) ? $config['quote_title'] : 'Thank You For Your Quote!',
+      '#default_value' => $config['quote_title'] ?? 'Thank You For Your Quote!',
     ];
 
     $form['order_body'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Order body'),
-      '#default_value' => isset($config['order_body']) ? $config['order_body'] : 'A full receipt will be emailed to the address you provided.',
+      '#default_value' => $config['order_body'] ?? 'A full receipt will be emailed to the address you provided.',
     ];
 
     $form['quote_body'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Order body'),
-      '#default_value' => isset($config['quote_body']) ? $config['quote_body'] : 'Your quote details will be emailed to the address you provided.',
+      '#default_value' => $config['quote_body'] ?? 'Your quote details will be emailed to the address you provided.',
     ];
 
     return $form;
@@ -80,4 +80,5 @@ class OrderThankYouBlock extends OrderBlockBase {
 
     return $output;
   }
+
 }

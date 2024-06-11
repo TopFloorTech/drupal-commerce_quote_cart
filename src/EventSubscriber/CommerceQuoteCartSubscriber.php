@@ -15,12 +15,13 @@ use Drupal\commerce_shipping\Event\BeforePackEvent;
 use Drupal\commerce_shipping\Event\CommerceShippingEvents;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\hook_event_dispatcher\Event\Form\FormAlterEvent;
-use Drupal\hook_event_dispatcher\HookEventDispatcherEvents;
+use Drupal\hook_event_dispatcher\HookEventDispatcherInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Drupal\commerce_cart\Event\CartEvents;
 use Drupal\commerce_cart\Event\OrderItemComparisonFieldsEvent;
 
 class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
+
   use StringTranslationTrait;
 
   private $quoteField = 'field_quote';
@@ -40,9 +41,9 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     $events[CartEvents::CART_ENTITY_ADD][] = ['onCartEntityAdd'];
     $events[CartEvents::CART_ORDER_ITEM_UPDATE][] = ['onCartOrderItemUpdate'];
     $events[CartEvents::CART_ORDER_ITEM_REMOVE][] = ['onCartOrderItemRemove'];
-    $events[HookEventDispatcherEvents::FORM_ALTER][] = ['alterCheckoutForm', -10];
-    $events[HookEventDispatcherEvents::FORM_ALTER][] = ['alterCartForm'];
-    $events[HookEventDispatcherEvents::FORM_ALTER][] = ['alterAddToCartForm'];
+    $events[HookEventDispatcherInterface::FORM_ALTER][] = ['alterCheckoutForm', -10];
+    $events[HookEventDispatcherInterface::FORM_ALTER][] = ['alterCartForm'];
+    $events[HookEventDispatcherInterface::FORM_ALTER][] = ['alterAddToCartForm'];
 
     return $events;
   }
@@ -56,7 +57,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    $form = $event->getForm();
+    $form = &$event->getForm();
     $form_state = $event->getFormState();
     $variation = commerce_quote_cart_get_current_variation($form_state->getStorage());
 
@@ -87,7 +88,6 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
 
     $form['#after_build'][] = 'commerce_quote_cart_set_triggering_element';
 
-    $event->setForm($form);
   }
 
   public function alterCartForm(FormAlterEvent $event) {
@@ -97,7 +97,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    $form = $event->getForm();
+    $form = &$event->getForm();
     $form_state = $event->getFormState();
 
     /** @var \Drupal\views\ViewExecutable $view */
@@ -114,7 +114,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       if (QuoteCartHelper::isMixedCart($order)) {
         $form['actions']['convert'] = [
           '#type' => 'submit',
-          '#value' => t('Convert to Quote'),
+          '#value' => $this->t('Convert to Quote'),
           '#submit' => ['commerce_quote_cart_submit_convert'],
           '#button_type' => 'primary',
           '#weight' => 0,
@@ -122,7 +122,6 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       }
     }
 
-    $event->setForm($form);
   }
 
   /**
@@ -135,7 +134,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    $form = $event->getForm();
+    $form = &$event->getForm();
     $is_quote = !QuoteCartHelper::isPurchaseCart();
     $label = $is_quote ? 'Quote' : 'Order';
     $shipping_label = $is_quote ? 'Contact' : 'Shipping';
@@ -145,7 +144,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     }
 
     if (isset($form['shipping_information'])) {
-      $form['shipping_information']['#title'] = t($shipping_label . ' Information');
+      $form['shipping_information']['#title'] = $this->t('@label Information', ['@label' => $shipping_label]);
       $form['#attached']['library'][] = 'commerce_quote_cart/shipping-information';
 
       // Hide shipping information for quote orders
@@ -163,7 +162,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       $nextValue = $form['actions']['next']['#value'];
 
       if (strtolower($nextValue->getUntranslatedString()) == 'pay and complete purchase') {
-        $form['actions']['next']['#value'] = t('Complete ' . strtolower($label));
+        $form['actions']['next']['#value'] = $this->t('Complete @label', ['@label' => strtolower($label)]);
       }
     }
 
@@ -172,12 +171,10 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
         '#type' => 'container',
         '#weight' => -1,
         'title' => [
-          '#markup' => t("$label summary"),
+          '#markup' => $this->t('@label summary', ['@label' => $label]),
         ]
       ];
     }
-
-    $event->setForm($form);
   }
 
   public function onCartEntityAdd(CartEntityAddEvent $event) {
