@@ -1,0 +1,8 @@
+name: 'Commerce Quote Cart Stock Enforcement'
+type: module
+description: 'Provides a stock enforcement functionality compatible with Commerce Quote Cart'
+package: Commerce Stock
+core_version_requirement: ^8 || ^9 || ^10
+dependencies:
+  - commerce_product:commerce_product
+  - commerce_stock:commerce_stock

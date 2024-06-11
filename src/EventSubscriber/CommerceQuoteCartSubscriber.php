@@ -10,9 +10,13 @@ use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_order\Event\OrderEvents;
 use Drupal\commerce_order\Event\OrderItemEvent;
 use Drupal\commerce_price\Price;
+use Drupal\commerce_product\Entity\Product;
+use Drupal\commerce_product\Entity\ProductVariationInterface;
 use Drupal\commerce_quote_cart\QuoteCartHelper;
 use Drupal\commerce_shipping\Event\BeforePackEvent;
 use Drupal\commerce_shipping\Event\CommerceShippingEvents;
+use Drupal\commerce_shipping\Event\FilterShippingMethodsEvent;
+use Drupal\commerce_shipping\Event\ShippingEvents;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\hook_event_dispatcher\Event\Form\FormAlterEvent;
 use Drupal\hook_event_dispatcher\HookEventDispatcherInterface;
@@ -44,13 +48,60 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     $events[HookEventDispatcherInterface::FORM_ALTER][] = ['alterCheckoutForm', -10];
     $events[HookEventDispatcherInterface::FORM_ALTER][] = ['alterCartForm'];
     $events[HookEventDispatcherInterface::FORM_ALTER][] = ['alterAddToCartForm'];
+    $events[ShippingEvents::FILTER_SHIPPING_METHODS][] = ['filterShippingMethods'];
 
     return $events;
   }
 
   /**
+   * Check if variation is available for quote.
+   *
+   * @param \Drupal\commerce_product\Entity\ProductVariationInterface $variation
+   *   The variation entity.
+   *
+   * @return bool
+   *   Whether the variation is available for quote.
+   */
+  private function variationAvailableForQuote(ProductVariationInterface $variation): bool {
+    $quotable = FALSE;
+    $quotableField = 'field_available_for_quote';
+
+    if ($variation->hasField($quotableField) && !$variation->get($quotableField)->isEmpty()) {
+      $quotable = (bool) $variation->get($quotableField)->value;
+    }
+
+    if (!$quotable && QuoteCartHelper::hasQuoteCart()) {
+      $quotable = TRUE;
+    }
+
+    return $quotable;
+  }
+
+  /**
+   * Check if variation is available for purchase.
+   *
+   * @param \Drupal\commerce_product\Entity\ProductVariationInterface $variation
+   *   The variation entity.
+   *
+   * @return bool
+   *   Whether the variation is available for purchase.
+   */
+  private function variationAvailableForPurchase(ProductVariationInterface $variation): bool {
+    $purchasable = FALSE;
+    $purchasableField = 'field_available_for_purchase';
+
+    if ($variation->hasField($purchasableField) && !$variation->get($purchasableField)->isEmpty()) {
+      $purchasable = (bool) $variation->get($purchasableField)->value;
+    }
+
+    return $purchasable;
+  }
+
+  /**
    * @param FormAlterEvent $event
-   * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+   *   The form alter event.
+   *
+   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   public function alterAddToCartForm(FormAlterEvent $event) {
     if (strpos($event->getFormId(), 'commerce_order_item_add_to_cart_form') !== 0) {
@@ -65,10 +116,10 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    $availableForQuote = $variation->get('field_available_for_quote')->value || QuoteCartHelper::hasQuoteCart();
-    $availableForPurchase = $variation->get('field_available_for_purchase')->value;
+    $availableForQuote = $this->variationAvailableForQuote($variation);
+    $availableForPurchase = $this->variationAvailableForPurchase($variation);
 
-    $form['actions']['submit']['#access'] = (bool) $availableForPurchase;
+    $form['actions']['submit']['#access'] = $availableForPurchase;
 
     $form['actions']['quote'] = [
       '#type' => 'submit',
@@ -76,7 +127,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       '#submit' => ['commerce_quote_cart_submit_quote'],
       '#button_type' => 'primary',
       '#weight' => 6,
-      '#access' => (bool) $availableForQuote,
+      '#access' => $availableForQuote,
       '#prefix' => '<span class="CartButton CartButton--quote">',
       '#suffix' => '</span>',
       '#attributes' => ['data-twig-suggestion' => 'submit_button'],
@@ -145,7 +196,6 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
 
     if (isset($form['shipping_information'])) {
       $form['shipping_information']['#title'] = $this->t('@label Information', ['@label' => $shipping_label]);
-      $form['#attached']['library'][] = 'commerce_quote_cart/shipping-information';
 
       // Hide shipping information for quote orders
       if (isset($form['shipping_information']['shipments']) && $is_quote) {
@@ -161,7 +211,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       /** @var \Drupal\Core\StringTranslation\TranslatableMarkup $nextValue */
       $nextValue = $form['actions']['next']['#value'];
 
-      if (strtolower($nextValue->getUntranslatedString()) == 'pay and complete purchase') {
+      if (strtolower($nextValue->getUntranslatedString()) === 'pay and complete purchase') {
         $form['actions']['next']['#value'] = $this->t('Complete @label', ['@label' => strtolower($label)]);
       }
     }
@@ -172,29 +222,65 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
         '#weight' => -1,
         'title' => [
           '#markup' => $this->t('@label summary', ['@label' => $label]),
-        ]
+        ],
       ];
     }
   }
 
+  /**
+   * Responds to entity add to cart.
+   *
+   * @param \Drupal\commerce_cart\Event\CartEntityAddEvent $event
+   *   The cart event.
+   *
+   * @return void
+   */
   public function onCartEntityAdd(CartEntityAddEvent $event) {
-    $cart = $event->getCart();
+    $this->updateOrderInfo($event->getCart());
+  }
+
+  /**
+   * Responds to entity update in cart.
+   *
+   * @param \Drupal\commerce_cart\Event\CartOrderItemUpdateEvent $event
+   *
+   * @return void
+   */
+  public function onCartOrderItemUpdate(CartOrderItemUpdateEvent $event) {
+    $this->updateOrderInfo($event->getCart());
+  }
+
+  /**
+   * Responds to entity remove from cart.
+   *
+   * @param \Drupal\commerce_cart\Event\CartOrderItemRemoveEvent $event
+   *
+   * @return void
+   */
+  public function onCartOrderItemRemove(CartOrderItemRemoveEvent $event) {
+    $this->updateOrderInfo($event->getCart());
+  }
+
+  /**
+   * Updates order info from cart events.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $cart
+   *   The cart / order entity.
+   *
+   * @return void
+   */
+  protected function updateOrderInfo(OrderInterface $cart): void {
     $this->setOrderType($cart);
     $this->cleanOrderInfo($cart);
   }
 
-  public function onCartOrderItemUpdate(CartOrderItemUpdateEvent $event) {
-    $cart = $event->getCart();
-    $this->setOrderType($cart);
-    $this->cleanOrderInfo($event->getCart());
-  }
-
-  public function onCartOrderItemRemove(CartOrderItemRemoveEvent $event) {
-    $cart = $event->getCart();
-    $this->setOrderType($cart);
-    $this->cleanOrderInfo($event->getCart());
-  }
-
+  /**
+   * Sets the order type.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *
+   * @return void
+   */
   public function setOrderType(OrderInterface $order) {
     if ($order->hasField($this->quoteField)) {
       $order->get($this->quoteField)->value = QuoteCartHelper::isQuoteCart($order);
@@ -222,11 +308,23 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     $event->setOrderItems($this->filterQuoteItems($event->getOrder(), $event->getOrderItems()));
   }
 
-  protected function filterQuoteItems(OrderInterface $order, array $items) {
-    // Only remove quote items from purchases, as we need as least one shippable item.
+  /**
+   * Filters quote items.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *   The order entity.
+   * @param array $items
+   *   An array of items.
+   *
+   * @return array
+   *   An array of filtered items.
+   */
+  protected function filterQuoteItems(OrderInterface $order, array $items): array {
+    // Only remove quote items from purchases, as we need as least one shippable
+    // item.
     if (QuoteCartHelper::isPurchaseCart($order)) {
       foreach ($items as $id => $orderItem) {
-        if ($orderItem->hasField('field_quote') && $orderItem->get('field_quote')->value) {
+        if ($orderItem->hasField($this->quoteField) && $orderItem->get($this->quoteField)->value) {
           unset($items[$id]);
         }
       }
@@ -247,11 +345,31 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     $orderItem = $event->getOrderItem();
 
     if ($orderItem->hasField($this->quoteField) && $orderItem->get($this->quoteField)->value) {
-      $orderItem->setUnitPrice(new Price("0.00", 'USD'));
+      $orderItem->setUnitPrice(new Price('0.00', 'USD'));
     }
   }
 
-  public function onOrderItemCreate(OrderItemEvent $event) {
-    $event->getOrderItem()->set($this->quoteField, ['value' => "0"]);
+  /**
+   * Responds to creating an order item.
+   *
+   * @param \Drupal\commerce_order\Event\OrderItemEvent $event
+   *
+   * @return void
+   */
+  public function onOrderItemCreate(OrderItemEvent $event): void {
+    $event->getOrderItem()->set($this->quoteField, ['value' => '0']);
   }
+
+  /**
+   * Filters shipping methods.
+   *
+   * @param \Drupal\commerce_shipping\Event\FilterShippingMethodsEvent $event
+   *   The filter shipping methods event.
+   *
+   * @return void
+   */
+  public function filterShippingMethods(FilterShippingMethodsEvent $event): void {
+    $event->setShippingMethods(QuoteCartHelper::filterShippingMethods($event->getShippingMethods(), $event->getShipment()));
+  }
+
 }

@@ -5,23 +5,31 @@
  * Contains hooks and functions for commerce_quote_cart.
  */
 
+use Drupal\commerce\Context;
 use Drupal\commerce\PurchasableEntityInterface;
 use Drupal\commerce_quote_cart\QuoteCartHelper;
 use Drupal\commerce_product\Entity\ProductInterface;
+use Drupal\commerce_product\Entity\ProductVariationInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Render\Markup;
 
 /**
+ * Get the current variation.
+ *
  * @param array $storage
+ *
  * @return \Drupal\commerce_product\Entity\ProductVariationInterface|\Drupal\Core\Entity\EntityInterface|null
+ *
  * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+ * @throws Drupal\Component\Plugin\Exception\PluginNotFoundException
  */
 function commerce_quote_cart_get_current_variation(array $storage) {
   if (isset($storage['selected_variation'])) {
     $variationId = $storage['selected_variation'];
 
     /** @var \Drupal\Core\Entity\ContentEntityInterface $variation */
-    return \Drupal::entityTypeManager()->getStorage('commerce_product_variation')->load($variationId);
+    return Drupal::entityTypeManager()->getStorage('commerce_product_variation')->load($variationId);
   }
 
   /** @var ProductInterface $product */
@@ -31,20 +39,26 @@ function commerce_quote_cart_get_current_variation(array $storage) {
 }
 
 /**
- * @param PurchasableEntityInterface $entity
+ * Get the store.
+ *
+ * @param \Drupal\commerce\PurchasableEntityInterface $entity
+ *   The entity being purchased.
+ *
  * @return \Drupal\commerce_store\Entity\StoreInterface|mixed
+ *
  * @throws Exception
  */
 function commerce_quote_cart_get_store(PurchasableEntityInterface $entity) {
   $stores = $entity->getStores();
+
   if (count($stores) === 1) {
     $store = reset($stores);
   }
   else {
-    $store = \Drupal::service('commerce_store.store_context')->getStore();
+    $store = Drupal::service('commerce_store.store_context')->getStore();
     if (!in_array($store, $stores, FALSE)) {
       // Indicates that the site listings are not filtered properly.
-      throw new \Exception("The given entity can't be purchased from the current store.");
+      throw new Exception("The given entity can't be purchased from the current store.");
     }
   }
 
@@ -52,8 +66,13 @@ function commerce_quote_cart_get_store(PurchasableEntityInterface $entity) {
 }
 
 /**
+ * Convert on submit.
+ *
  * @param array $form
+ *   The form array.
  * @param FormStateInterface $form_state
+ *   The form state interface object.
+ *
  * @throws \Drupal\Core\Entity\EntityStorageException
  */
 function commerce_quote_cart_submit_convert(array &$form, FormStateInterface $form_state) {
@@ -72,13 +91,23 @@ function commerce_quote_cart_submit_convert(array &$form, FormStateInterface $fo
   }
 }
 
+/**
+ * Submit quote.
+ *
+ * @param array $form
+ *   The form array.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The form state object.
+ *
+ * @return void
+ */
 function commerce_quote_cart_submit_quote(array &$form, FormStateInterface $form_state) {
   /** @var \Drupal\commerce_cart\Form\AddToCartForm $addToCartForm */
   $addToCartForm = $form_state->getBuildInfo()['callback_object'];
 
   /** @var \Drupal\commerce_order\Entity\OrderItemInterface $order_item */
   $order_item = $addToCartForm->getEntity();
-  $order_item->set('field_quote', ['value' => "1"]);
+  $order_item->set('field_quote', ['value' => '1']);
 
   $addToCartForm->submitForm($form, $form_state);
 }
@@ -88,21 +117,25 @@ function commerce_quote_cart_submit_quote(array &$form, FormStateInterface $form
  */
 function commerce_quote_cart_preprocess_block(&$variables) {
   if (in_array($variables['elements']['#id'], ['product_variations', 'product_variations_mobile'])) {
-      $config = \Drupal::config('block.block.' . $variables['elements']['#id']);
+      $config = Drupal::config('block.block.' . $variables['elements']['#id']);
       if ($config->get('label_display') == 'visible') {
           $variables['label'] = commerce_quote_cart_block_label($variables);
-      } else {
+      }
+      else {
           $variables['label'] = '';
       }
   }
 
-  if ($variables['plugin_id'] === 'page_title_block' && \Drupal::routeMatch()->getRouteName() === 'entity.commerce_order.user_view') {
+  if ($variables['plugin_id'] === 'page_title_block' && Drupal::routeMatch()->getRouteName() === 'entity.commerce_order.user_view') {
     /** @var \Drupal\commerce_order\Entity\OrderInterface $order */
-    $order = \Drupal::routeMatch()->getParameter('commerce_order');
+    $order = Drupal::routeMatch()->getParameter('commerce_order');
 
     if ($order) {
       $title = QuoteCartHelper::isPurchaseCart($order) ? 'Order' : 'Quote';
-      $variables['content']['#title'] = t($title . ' number: @order_number', ['@order_number' => $order->getOrderNumber()]);
+      $variables['content']['#title'] = t('@title number: @order_number', [
+        '@title' => $title,
+        '@order_number' => $order->getOrderNumber(),
+      ]);
     }
   }
 }
@@ -128,7 +161,12 @@ function commerce_quote_cart_preprocess_commerce_checkout_completion_message(&$v
   commerce_quote_cart_populate_order_variables($variables);
 }
 
-function commerce_quote_cart_populate_order_variables(&$variables) {
+/**
+ * @param array $variables
+ *
+ * @return void
+ */
+function commerce_quote_cart_populate_order_variables(array &$variables): void {
   if (isset($variables['order_entity'])) {
     /** @var Drupal\commerce_order\Entity\OrderInterface $order */
     $order = $variables['order_entity'];
@@ -145,10 +183,13 @@ function commerce_quote_cart_populate_order_variables(&$variables) {
 function commerce_quote_cart_block_label($variables) {
   $label = $variables['label'];
 
+  /** @var \Drupal\commerce_product\Entity\ProductInterface $product */
   $product = $variables['content']['content']['#commerce_product'];
 
   if ($product instanceof ProductInterface) {
-    if (commerce_quote_cart_product_is_purchasable($product)) {
+    $purchasable = commerce_quote_cart_product_is_purchasable($product);
+    $in_stock = commerce_quote_cart_get_product_stock_level($product) > 0;
+    if ($purchasable && $in_stock) {
       $label = 'Add to Cart';
     }
   }
@@ -156,39 +197,150 @@ function commerce_quote_cart_block_label($variables) {
   return $label;
 }
 
-function commerce_quote_cart_product_is_purchasable(ProductInterface $product) {
-  $purchasableField = 'field_available_for_purchase';
+/**
+ * Loops through a given product's variations and returns their total stock.
+ *
+ * @param \Drupal\commerce_product\Entity\ProductInterface $product
+ *   The product.
+ *
+ * @return int
+ *   Total of product's variations' stock levels
+ */
+function commerce_quote_cart_get_product_stock_level(ProductInterface $product): int {
   $variations = $product->getVariations();
+  $stock = 0;
 
+  foreach ($variations as $variation) {
+    $stock += commerce_quote_cart_get_variation_stock_level($variation);
+  }
+  return $stock;
+}
+
+/**
+ * Returns the current stock level of a given product variation.
+ *
+ * @param \Drupal\commerce_product\Entity\ProductVariationInterface $variation
+ *   The variation.
+ *
+ * @return int
+ *   The stock level of the variation.
+ *
+ * @throws \Exception
+ */
+function commerce_quote_cart_get_variation_stock_level(ProductVariationInterface $variation): int {
+  /** @var \Drupal\commerce_stock\StockServiceManagerInterface $stockManager */
+  $stockManager = Drupal::service('commerce_stock.service_manager');
+
+  return $stockManager->getStockLevel($variation);
+}
+
+/**
+ * Returns a boolean stating whether a variation is in stock.
+ *
+ * @param Drupal\commerce_product\Entity\ProductVariationInterface $variation
+ *   The variation.
+ *
+ * @return bool
+ *   Whether the variation is in stock.
+ */
+function commerce_quote_cart_variation_in_stock(ProductVariationInterface $variation): bool {
+  return commerce_quote_cart_get_variation_stock_level($variation) > 0;
+}
+
+/**
+ * Returns a boolean stating whether or not the given variation is purchasable.
+ *
+ * @param \Drupal\commerce_product\Entity\ProductVariationInterface $variation
+ *   The product variation entity.
+ *
+ * @return bool
+ *   Whether the variation is purchasable.
+ */
+function commerce_quote_cart_variation_is_purchasable(ProductVariationInterface $variation): bool {
+  $purchasableField = 'field_available_for_purchase';
+
+  return ($variation->hasField($purchasableField) && $variation->get($purchasableField)->value);
+}
+
+/**
+ * Whether a product has at least one purchasable variation.
+ *
+ * @param \Drupal\commerce_product\Entity\ProductInterface $product
+ *   The product entity.
+ *
+ * @return bool
+ *   Whether or not the product has purchasable variations.
+ */
+function commerce_quote_cart_product_is_purchasable(ProductInterface $product): bool {
+  $variations = $product->getVariations();
   $purchasable = FALSE;
 
   foreach ($variations as $variation) {
-    if (!$variation->hasField($purchasableField) || $variation->get($purchasableField)->value) {
+    if (commerce_quote_cart_variation_is_purchasable($variation) && commerce_quote_cart_variation_in_stock($variation)) {
       $purchasable = TRUE;
-
       break;
     }
   }
-
   return $purchasable;
 }
 
+/**
+ * Returns a boolean stating whether or not the given variation is quotable
+ *
+ * @param Drupal\commerce_product\Entity\ProductVariationInterface $variation
+ *
+ * @return bool Whether the variation is quotable
+ */
+function commerce_quote_cart_variation_is_quotable(ProductVariationInterface $variation) {
+  $quotableField = 'field_available_for_quote';
+
+  return ($variation->hasField($quotableField) && $variation->get($quotableField)->value);
+}
+
+/**
+ * Implements hook_preprocess_field();
+ */
 function commerce_quote_cart_preprocess_field(&$variables) {
   if ($variables['element']['#field_name'] === 'price') {
-    /** @var FieldableEntityInterface $entity */
-    $entity = $variables['element']['#object'];
+    /** @var ProductVariationInterface $variation */
+    $variation = $variables['element']['#object'];
+    $view_mode = $variables['element']['#view_mode'];
+    $purchasable = commerce_quote_cart_variation_is_purchasable($variation);
+    $quotable = commerce_quote_cart_variation_is_quotable($variation);
+    $current_user = Drupal::currentUser();
+    $current_store = Drupal::service('commerce_store.current_store')->getStore();
+    $context = new Context($current_user, $current_store);
+    $stockLevel = commerce_quote_cart_stock_enforcement_get_stock_level($variation, $context);
+    $already_ordered = commerce_quote_cart_stock_enforcement_get_ordered_quantity($variation, $context);
+    $outOfStockMessage = '<div class="out-of-stock">' . t('<span>Temporarily out of stock</span><br>Request a quote and we\'ll contact you with more information') . '</div>';
 
-    $purchasable = 'field_available_for_purchase';
-    $quotable = 'field_available_for_quote';
+    if (isset($variables['items'][0])) {
 
-    if ($entity->hasField($purchasable) && !$entity->get($purchasable)->value) {
-      if (isset($variables['items'][0])) {
-        if ($entity->hasField($quotable) && $entity->get($quotable)->value) {
-          $variables['items'][0]['content']['#markup'] = t('Quote');
-        } else {
-          $variables['items'][0]['content']['#markup'] = '';
+      $priceMarkup = NULL;
+
+      if ($purchasable) {
+        if ($stockLevel - $already_ordered <= 0) {
+          if ($view_mode === 'variations') {
+            $priceMarkup = $outOfStockMessage;
+          }
+          else {
+            $priceMarkup = t('Quote');
+          }
         }
+      }
+      else {
+        if ($quotable) {
+          $priceMarkup = t('Quote');
+        }
+        else {
+          $priceMarkup = '';
+        }
+      }
 
+      if (isset($priceMarkup)) {
+        $variables['items'][0]['content'] = [
+          '#markup' => $priceMarkup,
+        ];
       }
     }
   }
@@ -196,10 +348,13 @@ function commerce_quote_cart_preprocess_field(&$variables) {
 
 /**
  * @param array $entities
- * @param $entity_type
+ *   An array of entities.
+ * @param string $entity_type
+ *   The entity type.
+ *
  * @throws \Drupal\Core\TypedData\Exception\MissingDataException
  */
-function commerce_quote_cart_entity_storage_load(array $entities, $entity_type) {
+function commerce_quote_cart_entity_storage_load(array $entities, string $entity_type) {
   if ($entity_type === 'commerce_order') {
     /** @var \Drupal\commerce_order\Entity\OrderInterface $order */
     foreach ($entities as $order) {
@@ -227,4 +382,51 @@ function commerce_quote_cart_set_triggering_element(array $form, \Drupal\Core\Fo
   }
 
   return $form;
+}
+
+/**
+ * @param $variables
+ *
+ * @return void
+ */
+function commerce_quote_cart_preprocess_views_view_field(&$variables) {
+  $supportedFields = [
+    'total_price',
+    'unit_price'
+  ];
+
+  /** @var Drupal\views\Plugin\views\field\EntityField $field */
+  $field = $variables['field'];
+
+  /** @var Drupal\views\ResultRow $row */
+  $row = $variables['row'];
+  $fieldName = array_key_exists('entity_field', $field->options) ? $field->options['entity_field'] : '';
+
+  if ($fieldName && in_array($fieldName, $supportedFields, TRUE)) {
+    $total = 0.00;
+    $entity = $field->getEntity($row);
+
+    if ($entity instanceof FieldableEntityInterface && $entity->hasField($fieldName) && !$entity->get($fieldName)->isEmpty()) {
+      $total = (float) $entity->get($fieldName)->number;
+    }
+
+    if (!$total && $entity->hasField('field_quote') && $entity->get('field_quote')->value) {
+      $variables['output'] = Markup::create('Quote');
+    }
+  }
+}
+
+/**
+ * @param $variables
+ *
+ * @return void
+ */
+function commerce_quote_cart_preprocess_commerce_order_total_summary(&$variables) {
+  /** @var \Drupal\commerce_price\Price $subtotal */
+  $subtotal = $variables['totals']['subtotal'];
+
+  /** @var \Drupal\commerce_price\Price $total */
+  $total = $variables['totals']['total'];
+
+  $variables['is_quote'] = ($subtotal->isZero() && $total->isZero());
 }

@@ -9,12 +9,23 @@ use Drupal\commerce_shipping\Entity\ShippingMethodInterface;
 use Drupal\Core\Entity\EntityStorageException;
 
 class QuoteCartHelper {
-  public static function hasQuoteCart() {
+
+  /**
+   * Quote field constant.
+   *
+   * @var string
+   */
+  const QUOTE_FIELD = 'field_quote';
+
+  /**
+   * If there is a quote cart.
+   *
+   * @return bool
+   */
+  public static function hasQuoteCart(): bool {
     /** @var \Drupal\commerce_cart\CartProvider $cartProvider */
     $cartProvider = \Drupal::getContainer()->get('commerce_cart.cart_provider');
-
     $carts = $cartProvider->getCarts();
-
     $carts = array_filter($carts, function ($cart) {
       /** @var \Drupal\commerce_order\Entity\OrderInterface $cart */
       // There is a chance the cart may have converted from a draft order, but
@@ -37,6 +48,7 @@ class QuoteCartHelper {
   }
 
   public static function getCurrentCart() {
+    /** @var \Drupal\commerce_cart\CartProviderInterface $cartProvider */
     $cartProvider = \Drupal::service('commerce_cart.cart_provider');
 
     /** @var \Drupal\commerce_order\Entity\OrderInterface[] $carts */
@@ -52,7 +64,14 @@ class QuoteCartHelper {
     return $carts;
   }
 
-  public static function isMixedCart(OrderInterface $cartOrder = NULL) {
+  /**
+   * If the order is a mixed cart.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface|NULL $cartOrder
+   *
+   * @return bool
+   */
+  public static function isMixedCart(OrderInterface $cartOrder = NULL): bool {
     return self::isQuoteCart($cartOrder) && self::isPurchaseCart($cartOrder);
   }
 
@@ -71,11 +90,10 @@ class QuoteCartHelper {
 
     $isPurchaseCart = FALSE;
 
-    $field = 'field_quote';
-
     /** @var OrderItemInterface $item */
     foreach ($cartOrder->getItems() as $item) {
-      if (!$item->hasField($field) || !$item->get($field)->value) {
+      if (!$item->hasField(self::QUOTE_FIELD)
+        || !$item->get(self::QUOTE_FIELD)->value) {
         $isPurchaseCart = TRUE;
         break;
       }
@@ -99,10 +117,8 @@ class QuoteCartHelper {
 
     $isQuoteCart = FALSE;
 
-    $field = 'field_quote';
-
     foreach ($cartOrder->getItems() as $item) {
-      if ($item->hasField($field) && $item->get($field)->value) {
+      if ($item->hasField(self::QUOTE_FIELD) && $item->get(self::QUOTE_FIELD)->value) {
         $isQuoteCart = TRUE;
         break;
       }
@@ -112,19 +128,22 @@ class QuoteCartHelper {
   }
 
   /**
-   * @param OrderInterface $cartOrder
+   * Convert to a quote.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $cartOrder
+   *   The order / cart.
+   *
    * @throws EntityStorageException
    */
   public static function convertToQuote(OrderInterface $cartOrder) {
-    $field = 'field_quote';
     $save = FALSE;
 
     foreach ($cartOrder->getItems() as $item) {
-      if (!$item->hasField($field)) {
+      if (!$item->hasField(self::QUOTE_FIELD)) {
         continue;
       }
 
-      if (!$item->get($field)->value) {
+      if (!$item->get(self::QUOTE_FIELD)->value) {
         self::convertItemToQuote($item);
 
         $save = TRUE;
@@ -136,37 +155,42 @@ class QuoteCartHelper {
     }
   }
 
-  public static function isQuoteItem(OrderItemInterface $orderItem) {
-    $fieldName = 'field_quote';
-
-    return ($orderItem->hasField($fieldName) && $orderItem->get($fieldName)->value);
+  /**
+   * Tests for a quote item.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderItemInterface $orderItem
+   *
+   * @return bool
+   */
+  public static function isQuoteItem(OrderItemInterface $orderItem): bool {
+    return ($orderItem->hasField(self::QUOTE_FIELD) && $orderItem->get(self::QUOTE_FIELD)->value);
   }
 
   /**
+   * Convert item to quote.
+   *
    * @param OrderItemInterface $item
    * @throws EntityStorageException
    */
   public static function convertItemToQuote(OrderItemInterface $item) {
-    $field = 'field_quote';
-
-    if (!$item->hasField($field)) {
-      return;
+    if (!self::isQuoteItem($item)) {
+      $field = $item->get(self::QUOTE_FIELD);
+      $field->value = TRUE;
+      $item->save();
     }
-
-    $field = $item->get($field);
-
-    if ($field->value) {
-      return;
-    }
-
-    $field->value = TRUE;
-
-    $item->save();
   }
 
-  public static function filterShippingMethods(array $shippingMethods, ShipmentInterface $shipment) {
+  /**
+   * Filters shipping methods.
+   *
+   * @param array $shippingMethods
+   * @param \Drupal\commerce_shipping\Entity\ShipmentInterface $shipment
+   *
+   * @return array
+   */
+  public static function filterShippingMethods(array $shippingMethods, ShipmentInterface $shipment): array {
     $quoteMethodName = 'Quote';
-    $quote = !QuoteCartHelper::isPurchaseCart($shipment->getOrder());
+    $quote = !self::isPurchaseCart($shipment->getOrder());
 
     return array_filter($shippingMethods, function (ShippingMethodInterface $shippingMethod) use ($quote, $quoteMethodName) {
       return $quote
@@ -174,4 +198,5 @@ class QuoteCartHelper {
         : ($shippingMethod->getName() !== $quoteMethodName);
     });
   }
+
 }
