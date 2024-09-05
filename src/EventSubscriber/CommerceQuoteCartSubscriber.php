@@ -3,14 +3,15 @@
 namespace Drupal\commerce_quote_cart\EventSubscriber;
 
 use Drupal\commerce_cart\Event\CartEntityAddEvent;
+use Drupal\commerce_cart\Event\CartEvents;
 use Drupal\commerce_cart\Event\CartOrderItemRemoveEvent;
 use Drupal\commerce_cart\Event\CartOrderItemUpdateEvent;
+use Drupal\commerce_cart\Event\OrderItemComparisonFieldsEvent;
 use Drupal\commerce_fedex\Event\CommerceFedExEvents;
 use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_order\Event\OrderEvents;
 use Drupal\commerce_order\Event\OrderItemEvent;
 use Drupal\commerce_price\Price;
-use Drupal\commerce_product\Entity\Product;
 use Drupal\commerce_product\Entity\ProductVariationInterface;
 use Drupal\commerce_quote_cart\QuoteCartHelper;
 use Drupal\commerce_shipping\Event\BeforePackEvent;
@@ -18,11 +19,9 @@ use Drupal\commerce_shipping\Event\CommerceShippingEvents;
 use Drupal\commerce_shipping\Event\FilterShippingMethodsEvent;
 use Drupal\commerce_shipping\Event\ShippingEvents;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
-use Drupal\hook_event_dispatcher\Event\Form\FormAlterEvent;
-use Drupal\hook_event_dispatcher\HookEventDispatcherInterface;
+use Drupal\core_event_dispatcher\Event\Form\FormAlterEvent;
+use Drupal\core_event_dispatcher\FormHookEvents;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Drupal\commerce_cart\Event\CartEvents;
-use Drupal\commerce_cart\Event\OrderItemComparisonFieldsEvent;
 
 class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
 
@@ -45,9 +44,9 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     $events[CartEvents::CART_ENTITY_ADD][] = ['onCartEntityAdd'];
     $events[CartEvents::CART_ORDER_ITEM_UPDATE][] = ['onCartOrderItemUpdate'];
     $events[CartEvents::CART_ORDER_ITEM_REMOVE][] = ['onCartOrderItemRemove'];
-    $events[HookEventDispatcherInterface::FORM_ALTER][] = ['alterCheckoutForm', -10];
-    $events[HookEventDispatcherInterface::FORM_ALTER][] = ['alterCartForm'];
-    $events[HookEventDispatcherInterface::FORM_ALTER][] = ['alterAddToCartForm'];
+    $events[FormHookEvents::FORM_ALTER][] = ['alterCheckoutForm', -10];
+    $events[FormHookEvents::FORM_ALTER][] = ['alterCartForm'];
+    $events[FormHookEvents::FORM_ALTER][] = ['alterAddToCartForm'];
     $events[ShippingEvents::FILTER_SHIPPING_METHODS][] = ['filterShippingMethods'];
 
     return $events;
@@ -176,7 +175,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
   }
 
   /**
-   * @param \Drupal\hook_event_dispatcher\Event\Form\FormAlterEvent $event
+   * @param \Drupal\core_event_dispatcher\Event\Form\FormAlterEvent $event
    */
   public function alterCheckoutForm(FormAlterEvent $event) {
     $form_id = $event->getFormId();
@@ -333,6 +332,11 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     return $items;
   }
 
+  /**
+   * @param \Drupal\commerce_cart\Event\OrderItemComparisonFieldsEvent $event
+   *
+   * @return void
+   */
   public function onOrderItemComparisonFields(OrderItemComparisonFieldsEvent $event) {
     $fields = $event->getComparisonFields();
 
@@ -341,6 +345,11 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     $event->setComparisonFields($fields);
   }
 
+  /**
+   * @param \Drupal\commerce_order\Event\OrderItemEvent $event
+   *
+   * @return void
+   */
   public function onOrderItemPresave(OrderItemEvent $event) {
     $orderItem = $event->getOrderItem();
 

@@ -1,7 +1,7 @@
 name: Commerce Quote Cart
 type: module
 description: 'Supports quote items for Drupal Commerce.'
-core_version_requirement: ^9 || ^10
+core_version_requirement: ^10
 package: Commerce
 dependencies:
   - commerce_cart:commerce_cart
