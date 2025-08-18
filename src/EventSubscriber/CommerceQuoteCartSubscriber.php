@@ -15,7 +15,6 @@ use Drupal\commerce_price\Price;
 use Drupal\commerce_product\Entity\ProductVariationInterface;
 use Drupal\commerce_quote_cart\QuoteCartHelper;
 use Drupal\commerce_shipping\Event\BeforePackEvent;
-use Drupal\commerce_shipping\Event\CommerceShippingEvents;
 use Drupal\commerce_shipping\Event\FilterShippingMethodsEvent;
 use Drupal\commerce_shipping\Event\ShippingEvents;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
@@ -39,7 +38,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     $events[CartEvents::ORDER_ITEM_COMPARISON_FIELDS][] = ['onOrderItemComparisonFields'];
     $events[OrderEvents::ORDER_ITEM_PRESAVE][] = ['onOrderItemPresave'];
     $events[OrderEvents::ORDER_ITEM_CREATE][] = ['onOrderItemCreate'];
-    $events[CommerceShippingEvents::BEFORE_PACK][] = ['onBeforePack'];
+    $events[ShippingEvents::BEFORE_PACK][] = ['onBeforePack'];
     $events[CommerceFedExEvents::BEFORE_PACK][] = ['onBeforePackFedEx'];
     $events[CartEvents::CART_ENTITY_ADD][] = ['onCartEntityAdd'];
     $events[CartEvents::CART_ORDER_ITEM_UPDATE][] = ['onCartOrderItemUpdate'];
