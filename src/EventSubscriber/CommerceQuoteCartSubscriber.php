@@ -8,13 +8,14 @@ use Drupal\commerce_cart\Event\CartOrderItemRemoveEvent;
 use Drupal\commerce_cart\Event\CartOrderItemUpdateEvent;
 use Drupal\commerce_cart\Event\OrderItemComparisonFieldsEvent;
 use Drupal\commerce_fedex\Event\CommerceFedExEvents;
+use Drupal\commerce_fedex\Event\BeforePackEvent;
 use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_order\Event\OrderEvents;
 use Drupal\commerce_order\Event\OrderItemEvent;
 use Drupal\commerce_price\Price;
 use Drupal\commerce_product\Entity\ProductVariationInterface;
 use Drupal\commerce_quote_cart\QuoteCartHelper;
-use Drupal\commerce_shipping\Event\BeforePackEvent;
+use Drupal\commerce_shipping\Event\PrePackEvent;
 use Drupal\commerce_shipping\Event\FilterShippingMethodsEvent;
 use Drupal\commerce_shipping\Event\ShippingEvents;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
@@ -26,19 +27,30 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
 
   use StringTranslationTrait;
 
-  private $quoteField = 'field_quote';
-  private $purchaseField = 'field_purchase';
+  /**
+   * The quote field name.
+   *
+   * @var string
+   */
+  private string $quoteField = 'field_quote';
+
+  /**
+   * The purchase field name.
+   *
+   * @var string
+   */
+  private string $purchaseField = 'field_purchase';
 
   /**
    * {@inheritdoc}
    */
-  public static function getSubscribedEvents() {
+  public static function getSubscribedEvents(): array {
     $events = [];
 
     $events[CartEvents::ORDER_ITEM_COMPARISON_FIELDS][] = ['onOrderItemComparisonFields'];
     $events[OrderEvents::ORDER_ITEM_PRESAVE][] = ['onOrderItemPresave'];
     $events[OrderEvents::ORDER_ITEM_CREATE][] = ['onOrderItemCreate'];
-    $events[ShippingEvents::BEFORE_PACK][] = ['onBeforePack'];
+    $events[ShippingEvents::SHIPMENT_PREPACK][] = ['onBeforePack'];
     $events[CommerceFedExEvents::BEFORE_PACK][] = ['onBeforePackFedEx'];
     $events[CartEvents::CART_ENTITY_ADD][] = ['onCartEntityAdd'];
     $events[CartEvents::CART_ORDER_ITEM_UPDATE][] = ['onCartOrderItemUpdate'];
@@ -99,7 +111,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
    * @param FormAlterEvent $event
    *   The form alter event.
    *
-   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
+   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException|\Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
    */
   public function alterAddToCartForm(FormAlterEvent $event) {
     if (strpos($event->getFormId(), 'commerce_order_item_add_to_cart_form') !== 0) {
@@ -139,7 +151,15 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
 
   }
 
-  public function alterCartForm(FormAlterEvent $event) {
+  /**
+   * Alter cart form.
+   *
+   * @param \Drupal\core_event_dispatcher\Event\Form\FormAlterEvent $event
+   *   The subscribed event.
+   *
+   * @return void
+   */
+  public function alterCartForm(FormAlterEvent $event): void {
     $form_id = $event->getFormId();
 
     if (strpos($form_id, 'views_form_commerce_cart_form_') !== 0) {
@@ -174,9 +194,12 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
   }
 
   /**
+   * Alter checkout form.
+   *
    * @param \Drupal\core_event_dispatcher\Event\Form\FormAlterEvent $event
+   *   The subscribed event.
    */
-  public function alterCheckoutForm(FormAlterEvent $event) {
+  public function alterCheckoutForm(FormAlterEvent $event): void {
     $form_id = $event->getFormId();
 
     if (strpos($form_id, 'commerce_checkout_flow_') !== 0) {
@@ -201,7 +224,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
       }
     }
 
-    if (isset($form['review']) && isset($form['review']['shipping_information'])) {
+    if (isset($form['review']['shipping_information'])) {
       $form['review']['shipping_information']['#title'] = str_replace('Shipping ', "$shipping_label ", $form['review']['shipping_information']['#title']);
     }
 
@@ -233,7 +256,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
    *
    * @return void
    */
-  public function onCartEntityAdd(CartEntityAddEvent $event) {
+  public function onCartEntityAdd(CartEntityAddEvent $event): void {
     $this->updateOrderInfo($event->getCart());
   }
 
@@ -244,7 +267,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
    *
    * @return void
    */
-  public function onCartOrderItemUpdate(CartOrderItemUpdateEvent $event) {
+  public function onCartOrderItemUpdate(CartOrderItemUpdateEvent $event): void {
     $this->updateOrderInfo($event->getCart());
   }
 
@@ -255,7 +278,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
    *
    * @return void
    */
-  public function onCartOrderItemRemove(CartOrderItemRemoveEvent $event) {
+  public function onCartOrderItemRemove(CartOrderItemRemoveEvent $event): void {
     $this->updateOrderInfo($event->getCart());
   }
 
@@ -279,7 +302,7 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
    *
    * @return void
    */
-  public function setOrderType(OrderInterface $order) {
+  public function setOrderType(OrderInterface $order): void {
     if ($order->hasField($this->quoteField)) {
       $order->get($this->quoteField)->value = QuoteCartHelper::isQuoteCart($order);
     }
@@ -289,7 +312,13 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     }
   }
 
-  public function cleanOrderInfo(OrderInterface $cart) {
+  /**
+   * @param \Drupal\commerce_order\Entity\OrderInterface $cart
+   *   The cart order.
+   *
+   * @return void
+   */
+  public function cleanOrderInfo(OrderInterface $cart): void {
     // Don't do this if it's an order.
     if (QuoteCartHelper::isPurchaseCart($cart) || is_null($cart->getTotalPrice()) || $cart->getTotalPrice()->isZero()) {
       return;
@@ -298,11 +327,25 @@ class CommerceQuoteCartSubscriber implements EventSubscriberInterface {
     $cart->clearAdjustments();
   }
 
-  public function onBeforePack(BeforePackEvent $event) {
+  /**
+   * Event fired before packing.
+   *
+   * @param \Drupal\commerce_shipping\Event\PrePackEvent $event
+   *   The subscribed shipping event.
+   *
+   * @return void
+   */
+  public function onBeforePack(PrePackEvent $event): void {
     $event->setOrderItems($this->filterQuoteItems($event->getOrder(), $event->getOrderItems()));
   }
 
-  public function onBeforePackFedEx(\Drupal\commerce_fedex\Event\BeforePackEvent $event) {
+  /**
+   * @param \Drupal\commerce_fedex\Event\BeforePackEvent $event
+   *   The subscribed event.
+   *
+   * @return void
+   */
+  public function onBeforePackFedEx(BeforePackEvent $event): void {
     $event->setOrderItems($this->filterQuoteItems($event->getOrder(), $event->getOrderItems()));
   }
 
