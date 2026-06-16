@@ -71,7 +71,7 @@ class QuoteCartHelper {
    *
    * @return bool
    */
-  public static function isMixedCart(OrderInterface $cartOrder = NULL): bool {
+  public static function isMixedCart(?OrderInterface $cartOrder = NULL): bool {
     return self::isQuoteCart($cartOrder) && self::isPurchaseCart($cartOrder);
   }
 
@@ -102,7 +102,7 @@ class QuoteCartHelper {
     return $isPurchaseCart;
   }
 
-  public static function isQuoteCart(OrderInterface $cartOrder = NULL) {
+  public static function isQuoteCart(?OrderInterface $cartOrder = NULL) {
     if (is_null($cartOrder)) {
       $quoteCart = FALSE;
 
