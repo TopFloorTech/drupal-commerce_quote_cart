@@ -75,7 +75,14 @@ class QuoteCartHelper {
     return self::isQuoteCart($cartOrder) && self::isPurchaseCart($cartOrder);
   }
 
-  public static function isPurchaseCart(OrderInterface $cartOrder = NULL) {
+  /**
+   * Determines if the current order is a purchase.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface|NULL $cartOrder
+   *
+   * @return bool
+   */
+  public static function isPurchaseCart(?OrderInterface $cartOrder = NULL): bool {
     if (is_null($cartOrder)) {
       $purchaseCart = FALSE;
 
@@ -90,7 +97,6 @@ class QuoteCartHelper {
 
     $isPurchaseCart = FALSE;
 
-    /** @var OrderItemInterface $item */
     foreach ($cartOrder->getItems() as $item) {
       if (!$item->hasField(self::QUOTE_FIELD)
         || !$item->get(self::QUOTE_FIELD)->value) {

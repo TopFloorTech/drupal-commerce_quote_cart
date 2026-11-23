@@ -20,7 +20,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
  */
 function commerce_quote_cart_stock_enforcement_form_alter(&$form, FormStateInterface $form_state, $form_id) {
   // Add to cart form.
-  if (strpos($form_id, 'commerce_order_item_add_to_cart_form') !== FALSE) {
+  if (str_contains($form_id, 'commerce_order_item_add_to_cart_form')) {
     /** @var \Drupal\commerce_product\Entity\ProductInterface $product */
     $product = $form_state->get('product');
     // Get the product variation.
@@ -69,10 +69,9 @@ function commerce_quote_cart_stock_enforcement_form_alter(&$form, FormStateInter
   }
 
   // Checkout.
-  if (strpos($form_id, 'commerce_checkout_flow') !== FALSE
+  if (str_contains($form_id, 'commerce_checkout_flow')
     && $form_state->getFormObject()
       ->getBaseFormId() === 'commerce_checkout_flow') {
-    /** @var Drupal\Core\Form\FormInterface $form_object */
     $form_object = $form_state->getFormObject();
     /** @var \Drupal\commerce_order\Entity\OrderInterface $order */
     $order = $form_object->getOrder();
@@ -95,7 +94,7 @@ function commerce_quote_cart_stock_enforcement_form_alter(&$form, FormStateInter
  * @param \Drupal\Core\Form\FormStateInterface $form_state
  *   The form state.
  */
-function commerce_quote_cart_stock_enforcement_add_to_cart_form_validate(array $form, FormStateInterface $form_state) {
+function commerce_quote_cart_stock_enforcement_add_to_cart_form_validate(array $form, FormStateInterface $form_state): void {
   $triggering_element = $form_state->getTriggeringElement();
 
   if (isset($triggering_element['#parents'][0]) && $triggering_element['#parents'][0] === 'quote') {
@@ -154,8 +153,9 @@ function commerce_quote_cart_stock_enforcement_add_to_cart_form_validate(array $
  *
  * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException|\Drupal\Component\Plugin\Exception\PluginNotFoundException
  */
-function commerce_quote_cart_stock_enforcement_cart_order_item_views_form_validate(array $form, FormStateInterface $form_state) {
+function commerce_quote_cart_stock_enforcement_cart_order_item_views_form_validate(array $form, FormStateInterface $form_state): void {
   // If triggered by a line item delete.
+  $triggering_element = $form_state->getTriggeringElement();
   if (isset($triggering_element['#remove_order_item']) && $triggering_element['#remove_order_item']) {
     // No need to validate.
     return;
@@ -164,8 +164,6 @@ function commerce_quote_cart_stock_enforcement_cart_order_item_views_form_valida
   $values = $form_state->getValues();
   $quantities = $values['edit_quantity'];
 
-  /** @var \Drupal\views\ViewExecutable $view */
-  $view = reset($form_state->getBuildInfo()['args']);
   // Get the order ID from the view argument.
   /** @var \Drupal\views\ViewExecutable $view */
   $view = reset($form_state->getBuildInfo()['args']);
